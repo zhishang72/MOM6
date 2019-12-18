@@ -23,19 +23,24 @@ public benchmark_initialize_topography
 public benchmark_initialize_thickness
 public benchmark_init_temperature_salinity
 
+! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
+! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
+! their mks counterparts with notation like "a velocity [Z T-1 ~> m s-1]".  If the units
+! vary with the Boussinesq approximation, the Boussinesq variant is given first.
+
 contains
 
 !> This subroutine sets up the benchmark test case topography.
 subroutine benchmark_initialize_topography(D, G, param_file, max_depth, US)
   type(dyn_horgrid_type),          intent(in)  :: G !< The dynamic horizontal grid type
   real, dimension(G%isd:G%ied,G%jsd:G%jed), &
-                                   intent(out) :: D !< Ocean bottom depth in m or Z if US is present
+                                   intent(out) :: D !< Ocean bottom depth in m or [Z ~> m] if US is present
   type(param_file_type),           intent(in)  :: param_file !< Parameter file structure
   real,                            intent(in)  :: max_depth !< Maximum model depth in the units of D
   type(unit_scale_type), optional, intent(in)  :: US !< A dimensional unit scaling type
 
   ! Local variables
-  real :: min_depth            ! The minimum and maximum depths in Z.
+  real :: min_depth            ! The minimum and maximum depths [Z ~> m].
   real :: PI                   ! 3.1415926... calculated as 4*atan(1)
   real :: D0                   ! A constant to make the maximum     !
                                ! basin depth MAXIMUM_DEPTH.         !
@@ -83,33 +88,37 @@ subroutine benchmark_initialize_thickness(h, G, GV, US, param_file, eqn_of_state
   type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure.
   type(unit_scale_type),   intent(in)  :: US !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                           intent(out) :: h           !< The thickness that is being initialized, in H.
+                           intent(out) :: h           !< The thickness that is being initialized [H ~> m or kg m-2].
   type(param_file_type),   intent(in)  :: param_file  !< A structure indicating the open file
                                                       !! to parse for model parameter values.
   type(EOS_type),          pointer     :: eqn_of_state !< integer that selects the
                                                       !! equation of state.
   real,                    intent(in)  :: P_Ref       !< The coordinate-density
-                                                      !! reference pressure in Pa.
+                                                      !! reference pressure [Pa].
   logical,       optional, intent(in)  :: just_read_params !< If present and true, this call will
                                                       !! only read parameters without changing h.
   ! Local variables
-  real :: e0(SZK_(GV)+1)     ! The resting interface heights, in depth units (Z),
+  real :: e0(SZK_(GV)+1)     ! The resting interface heights, in depth units [Z ~> m],
                              ! usually negative because it is positive upward.
   real :: e_pert(SZK_(GV)+1) ! Interface height perturbations, positive upward,
-                             ! in depth units (Z).
+                             ! in depth units [Z ~> m].
   real :: eta1D(SZK_(GV)+1)  ! Interface height relative to the sea surface
-                             ! positive upward, in depth units (Z).
-  real :: SST       !  The initial sea surface temperature, in deg C.
-  real :: T_int     !  The initial temperature of an interface, in deg C.
-  real :: ML_depth  !  The specified initial mixed layer depth, in depth units (Z).
-  real :: thermocline_scale ! The e-folding scale of the thermocline, in depth units (Z).
-  real, dimension(SZK_(GV)) :: T0, pres, S0, rho_guess, drho, drho_dT, drho_dS
-  real :: a_exp      ! The fraction of the overall stratification that is exponential.
-  real :: I_ts, I_md ! Inverse lengthscales in Z-1.
-  real :: T_frac     ! A ratio of the interface temperature to the range
-                     ! between SST and the bottom temperature.
+                             ! positive upward, in depth units [Z ~> m].
+  real :: SST       !  The initial sea surface temperature [degC].
+  real :: T_int     !  The initial temperature of an interface [degC].
+  real :: ML_depth  !  The specified initial mixed layer depth, in depth units [Z ~> m].
+  real :: thermocline_scale ! The e-folding scale of the thermocline, in depth units [Z ~> m].
+  real, dimension(SZK_(GV)) :: &
+    T0, pres, S0, & ! drho
+    rho_guess, &    ! Potential density at T0 & S0 [R ~> kg m-3].
+    drho_dT, &      ! Derivative of density with temperature [R degC-1 ~> kg m-3 degC-1].
+    drho_dS         ! Derivative of density with salinity [R ppt-1 ~> kg m-3 ppt-1].
+  real :: a_exp     ! The fraction of the overall stratification that is exponential.
+  real :: I_ts, I_md ! Inverse lengthscales [Z-1 ~> m-1].
+  real :: T_frac    ! A ratio of the interface temperature to the range
+                    ! between SST and the bottom temperature.
   real :: err, derr_dz  ! The error between the profile's temperature and the
-                     ! interface temperature for a given z and its derivative.
+                    ! interface temperature for a given z and its derivative.
   real :: pi, z
   logical :: just_read
   ! This include declares and sets the variable "version".
@@ -142,8 +151,8 @@ subroutine benchmark_initialize_thickness(h, G, GV, US, param_file, eqn_of_state
     pres(k) = P_Ref ; S0(k) = 35.0
   enddo
   T0(k1) = 29.0
-  call calculate_density(T0(k1), S0(k1), pres(k1), rho_guess(k1), eqn_of_state)
-  call calculate_density_derivs(T0, S0, pres, drho_dT, drho_dS, k1, 1, eqn_of_state)
+  call calculate_density(T0(k1), S0(k1), pres(k1), rho_guess(k1), eqn_of_state, scale=US%kg_m3_to_R)
+  call calculate_density_derivs(T0, S0, pres, drho_dT, drho_dS, k1, 1, eqn_of_state, scale=US%kg_m3_to_R)
 
 ! A first guess of the layers' temperatures.
   do k=1,nz
@@ -152,8 +161,8 @@ subroutine benchmark_initialize_thickness(h, G, GV, US, param_file, eqn_of_state
 
 ! Refine the guesses for each layer.
   do itt=1,6
-    call calculate_density(T0, S0, pres, rho_guess, 1, nz, eqn_of_state)
-    call calculate_density_derivs(T0, S0, pres, drho_dT, drho_dS, 1, nz, eqn_of_state)
+    call calculate_density(T0, S0, pres, rho_guess, 1, nz, eqn_of_state, scale=US%kg_m3_to_R)
+    call calculate_density_derivs(T0, S0, pres, drho_dT, drho_dS, 1, nz, eqn_of_state, scale=US%kg_m3_to_R)
     do k=1,nz
       T0(k) = T0(k) + (GV%Rlay(k) - rho_guess(k)) / drho_dT(k)
     enddo
@@ -168,13 +177,10 @@ subroutine benchmark_initialize_thickness(h, G, GV, US, param_file, eqn_of_state
 
     do k=1,nz ; e_pert(K) = 0.0 ; enddo
 
-!  The remainder of this subroutine should not be changed.           !
-
-!    This sets the initial thickness (in H) of the layers.  The      !
-!  thicknesses are set to insure that: 1.  each layer is at least    !
-!  Gv%Angstrom_m thick, and 2.  the interfaces are where they should be    !
-!  based on the resting depths and interface height perturbations,   !
-!  as long at this doesn't interfere with 1.                         !
+    !   This sets the initial thickness (in [H ~> m or kg m-2]) of the layers.  The thicknesses
+    ! are set to insure that: 1. each layer is at least  Gv%Angstrom_m thick, and
+    ! 2. the interfaces are where they should be based on the resting depths and interface
+    ! height perturbations, as long at this doesn't interfere with 1.
     eta1D(nz+1) = -G%bathyT(i,j)
 
     do k=nz,2,-1
@@ -206,7 +212,7 @@ subroutine benchmark_initialize_thickness(h, G, GV, US, param_file, eqn_of_state
 end subroutine benchmark_initialize_thickness
 
 !> Initializes layer temperatures and salinities for benchmark
-subroutine benchmark_init_temperature_salinity(T, S, G, GV, param_file, &
+subroutine benchmark_init_temperature_salinity(T, S, G, GV, US, param_file, &
                eqn_of_state, P_Ref, just_read_params)
   type(ocean_grid_type),               intent(in)  :: G            !< The ocean's grid structure.
   type(verticalGrid_type),             intent(in)  :: GV           !< The ocean's vertical grid structure.
@@ -214,25 +220,24 @@ subroutine benchmark_init_temperature_salinity(T, S, G, GV, param_file, &
                                                                    !! that is being initialized.
   real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(out) :: S      !< The salinity that is being
                                                                    !! initialized.
+  type(unit_scale_type),                     intent(in)  :: US     !< A dimensional unit scaling type
   type(param_file_type),               intent(in)  :: param_file   !< A structure indicating the
                                                                    !! open file to parse for
                                                                    !! model parameter values.
   type(EOS_type),                      pointer     :: eqn_of_state !< integer that selects the
                                                                    !! equation of state.
   real,                                intent(in)  :: P_Ref        !< The coordinate-density
-                                                                   !! reference pressure in Pa.
+                                                                   !! reference pressure [Pa].
   logical,       optional, intent(in)  :: just_read_params !< If present and true, this call will
                                                       !! only read parameters without changing h.
   ! Local variables
   real :: T0(SZK_(G)), S0(SZK_(G))
-  real :: pres(SZK_(G))      ! Reference pressure in kg m-3.             !
-  real :: drho_dT(SZK_(G))   ! Derivative of density with temperature in !
-                        ! kg m-3 K-1.                               !
-  real :: drho_dS(SZK_(G))   ! Derivative of density with salinity in    !
-                        ! kg m-3 PSU-1.                             !
-  real :: rho_guess(SZK_(G)) ! Potential density at T0 & S0 in kg m-3.   !
+  real :: pres(SZK_(G))      ! Reference pressure [kg m-3].
+  real :: drho_dT(SZK_(G))   ! Derivative of density with temperature [R degC-1 ~> kg m-3 degC-1].
+  real :: drho_dS(SZK_(G))   ! Derivative of density with salinity [R ppt-1 ~> kg m-3 ppt-1].
+  real :: rho_guess(SZK_(G)) ! Potential density at T0 & S0 [R ~> kg m-3].
   real :: PI        ! 3.1415926... calculated as 4*atan(1)
-  real :: SST       !  The initial sea surface temperature, in deg C.
+  real :: SST       !  The initial sea surface temperature [degC].
   real :: lat
   logical :: just_read    ! If true, just read parameters but set nothing.
   character(len=40)  :: mdl = "benchmark_init_temperature_salinity" ! This subroutine's name.
@@ -251,8 +256,8 @@ subroutine benchmark_init_temperature_salinity(T, S, G, GV, param_file, &
   enddo
 
   T0(k1) = 29.0
-  call calculate_density(T0(k1),S0(k1),pres(k1),rho_guess(k1),eqn_of_state)
-  call calculate_density_derivs(T0,S0,pres,drho_dT,drho_dS,k1,1,eqn_of_state)
+  call calculate_density(T0(k1),S0(k1),pres(k1),rho_guess(k1),eqn_of_state, scale=US%kg_m3_to_R)
+  call calculate_density_derivs(T0,S0,pres,drho_dT,drho_dS,k1,1,eqn_of_state, scale=US%kg_m3_to_R)
 
 ! A first guess of the layers' temperatures.                         !
   do k=1,nz
@@ -261,8 +266,8 @@ subroutine benchmark_init_temperature_salinity(T, S, G, GV, param_file, &
 
 ! Refine the guesses for each layer.                                 !
   do itt = 1,6
-    call calculate_density(T0,S0,pres,rho_guess,1,nz,eqn_of_state)
-    call calculate_density_derivs(T0,S0,pres,drho_dT,drho_dS,1,nz,eqn_of_state)
+    call calculate_density(T0,S0,pres,rho_guess,1,nz,eqn_of_state, scale=US%kg_m3_to_R)
+    call calculate_density_derivs(T0,S0,pres,drho_dT,drho_dS,1,nz,eqn_of_state, scale=US%kg_m3_to_R)
     do k=1,nz
       T0(k) = T0(k) + (GV%Rlay(k) - rho_guess(k)) / drho_dT(k)
     enddo

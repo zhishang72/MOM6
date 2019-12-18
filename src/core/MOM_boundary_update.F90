@@ -115,7 +115,7 @@ subroutine update_OBC_data(OBC, G, GV, US, tv, h, CS, Time)
   type(verticalGrid_type),                  intent(in)    :: GV   !< Ocean vertical grid structure
   type(unit_scale_type),                    intent(in)    :: US   !< A dimensional unit scaling type
   type(thermo_var_ptrs),                    intent(in)    :: tv   !< Thermodynamics structure
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(inout) :: h    !< layer thicknesses, in H
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(inout) :: h    !< layer thicknesses [H ~> m or kg m-2]
   type(ocean_OBC_type),                     pointer       :: OBC  !< Open boundary structure
   type(update_OBC_CS),                      pointer       :: CS   !< Control structure for OBCs
   type(time_type),                          intent(in)    :: Time !< Model time
@@ -146,7 +146,7 @@ subroutine update_OBC_data(OBC, G, GV, US, tv, h, CS, Time)
   if (CS%use_dyed_channel) &
       call dyed_channel_update_flow(OBC, CS%dyed_channel_OBC_CSp, G, Time)
   if (OBC%needs_IO_for_data)  &
-      call update_OBC_segment_data(G, GV, OBC, tv, h, Time)
+      call update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
 end subroutine update_OBC_data
 

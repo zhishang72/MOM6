@@ -73,7 +73,7 @@ type, public :: ODA_CS ; private
 
   type(domain2d), pointer :: mpp_domain => NULL() !< Pointer to a mpp domain object for DA
   type(grid_type), pointer :: oda_grid !< local tracer grid
-  real, pointer, dimension(:,:,:) :: h => NULL() !<layer thicknesses (m or kg/m2) for DA
+  real, pointer, dimension(:,:,:) :: h => NULL() !<layer thicknesses [H ~> m or kg m-2] for DA
   type(thermo_var_ptrs), pointer :: tv => NULL() !< pointer to thermodynamic variables
   integer :: ni          !< global i-direction grid size
   integer :: nj          !< global j-direction grid size
@@ -150,7 +150,7 @@ subroutine init_oda(Time, G, GV, CS)
   call unit_scaling_init(PF, CS%US)
 
   call get_param(PF, "MOM", "ASSIM_METHOD", assim_method,  &
-       "String which determines the data assimilation method" // &
+       "String which determines the data assimilation method "//&
        "Valid methods are: \'EAKF\',\'OI\', and \'NO_ASSIM\'", default='NO_ASSIM')
   call get_param(PF, "MOM", "ASSIM_FREQUENCY", CS%assim_frequency,  &
        "data assimilation frequency in hours")
@@ -163,14 +163,14 @@ subroutine init_oda(Time, G, GV, CS)
        "If true, the domain is meridionally reentrant.", &
        default=.false.)
   call get_param(PF,"MOM", "TRIPOLAR_N", CS%tripolar_N, &
-       "Use tripolar connectivity at the northern edge of the \n"//&
+       "Use tripolar connectivity at the northern edge of the "//&
        "domain.  With TRIPOLAR_N, NIGLOBAL must be even.", &
        default=.false.)
   call get_param(PF,"MOM", "NIGLOBAL", CS%ni, &
-       "The total number of thickness grid points in the \n"//&
+       "The total number of thickness grid points in the "//&
        "x-direction in the physical domain.")
   call get_param(PF,"MOM", "NJGLOBAL", CS%nj, &
-       "The total number of thickness grid points in the \n"//&
+       "The total number of thickness grid points in the "//&
        "y-direction in the physical domain.")
   call get_param(PF, 'MOM', "INPUTDIR", inputdir)
   inputdir = slasher(inputdir)
@@ -222,8 +222,8 @@ subroutine init_oda(Time, G, GV, CS)
            dirs%output_directory, tv_dummy, dG%max_depth)
   call ALE_init(PF, CS%GV, CS%US, dG%max_depth, CS%ALE_CS)
   call MOM_grid_init(CS%Grid, PF, global_indexing=.true.)
-  call ALE_updateVerticalGridType(CS%ALE_CS,CS%GV)
-  call copy_dyngrid_to_MOM_grid(dG, CS%Grid)
+  call ALE_updateVerticalGridType(CS%ALE_CS, CS%GV)
+  call copy_dyngrid_to_MOM_grid(dG, CS%Grid, CS%US)
   CS%mpp_domain => CS%Grid%Domain%mpp_domain
   CS%Grid%ke = CS%GV%ke
   CS%nk = CS%GV%ke
@@ -323,7 +323,7 @@ subroutine set_prior_tracer(Time, G, GV, h, tv, CS)
   type(time_type), intent(in)    :: Time !< The current model time
   type(ocean_grid_type), pointer :: G !< domain and grid information for ocean model
   type(verticalGrid_type),               intent(in)    :: GV   !< The ocean's vertical grid structure
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in) :: h    !< Layer thicknesses, in H (usually m or kg m-2)
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in) :: h    !< Layer thicknesses [H ~> m or kg m-2]
   type(thermo_var_ptrs),                 intent(in) :: tv   !< A structure pointing to various thermodynamic variables
 
   type(ODA_CS), pointer :: CS !< ocean DA control structure
@@ -383,7 +383,7 @@ end subroutine set_prior_tracer
 subroutine get_posterior_tracer(Time, CS, h, tv, increment)
   type(time_type), intent(in) :: Time !< the current model time
   type(ODA_CS), pointer :: CS !< ocean DA control structure
-  real, dimension(:,:,:), pointer :: h    !< Layer thicknesses, in H (usually m or kg m-2)
+  real, dimension(:,:,:), pointer :: h    !< Layer thicknesses [H ~> m or kg m-2]
   type(thermo_var_ptrs), pointer :: tv   !< A structure pointing to various thermodynamic variables
   logical, optional, intent(in) :: increment !< True if returning increment only
 
@@ -545,11 +545,11 @@ end subroutine save_obs_diff
 
 !> Apply increments to tracers
 subroutine apply_oda_tracer_increments(dt,G,tv,h,CS)
-  real,                     intent(in)    :: dt !< The tracer timestep (seconds)
+  real,                     intent(in)    :: dt !< The tracer timestep [s]
   type(ocean_grid_type),    intent(in)    :: G  !< ocean grid structure
   type(thermo_var_ptrs),    intent(inout) :: tv !< A structure pointing to various thermodynamic variables
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)),  &
-                            intent(in)    :: h  !< layer thickness (m or kg/m2)
+                            intent(in)    :: h  !< layer thickness [H ~> m or kg m-2]
   type(ODA_CS),             intent(inout) :: CS !< the data assimilation structure
 
 end subroutine apply_oda_tracer_increments

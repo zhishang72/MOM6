@@ -15,15 +15,21 @@ public verticalGridInit, verticalGridEnd
 public setVerticalGridAxes, fix_restart_scaling
 public get_flux_units, get_thickness_units, get_tr_flux_units
 
+! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
+! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
+! their mks counterparts with notation like "a velocity [Z T-1 ~> m s-1]".  If the units
+! vary with the Boussinesq approximation, the Boussinesq variant is given first.
+
 !> Describes the vertical ocean grid, including unit conversion factors
 type, public :: verticalGrid_type
 
   ! Commonly used parameters
   integer :: ke     !< The number of layers/levels in the vertical
-  real :: max_depth !< The maximum depth of the ocean in Z (often m).
-  real :: g_Earth   !< The gravitational acceleration in m2 Z-1 s-2.
+  real :: max_depth !< The maximum depth of the ocean [Z ~> m].
+  real :: mks_g_Earth !< The gravitational acceleration in unscaled MKS units [m s-2].
+  real :: g_Earth   !< The gravitational acceleration [L2 Z-1 T-2 ~> m s-2].
   real :: Rho0      !< The density used in the Boussinesq approximation or nominal
-                    !! density used to convert depths into mass units, in kg m-3.
+                    !! density used to convert depths into mass units [kg m-3].
 
   ! Vertical coordinate descriptions for diagnostics and I/O
   character(len=40) :: zAxisUnits !< The units that vertical coordinates are written in
@@ -35,26 +41,30 @@ type, public :: verticalGrid_type
 
   ! The following variables give information about the vertical grid.
   logical :: Boussinesq !< If true, make the Boussinesq approximation.
-  real :: Angstrom_H    !< A one-Angstrom thickness in the model thickness units.
-  real :: Angstrom_Z    !< A one-Angstrom thickness in the model depth units.
-  real :: Angstrom_m    !< A one-Angstrom thickness in m.
+  real :: Angstrom_H    !< A one-Angstrom thickness in the model thickness units [H ~> m or kg m-2].
+  real :: Angstrom_Z    !< A one-Angstrom thickness in the model depth units [Z ~> m].
+  real :: Angstrom_m    !< A one-Angstrom thickness [m].
   real :: H_subroundoff !< A thickness that is so small that it can be added to a thickness of
-                        !! Angstrom or larger without changing it at the bit level, in thickness units.
+                        !! Angstrom or larger without changing it at the bit level [H ~> m or kg m-2].
                         !! If Angstrom is 0 or exceedingly small, this is negligible compared to 1e-17 m.
   real, allocatable, dimension(:) :: &
-    g_prime, &          !< The reduced gravity at each interface, in m2 Z-1 s-2.
-    Rlay                !< The target coordinate value (potential density) in each layer in kg m-3.
+    g_prime, &          !< The reduced gravity at each interface [L2 Z-1 T-2 ~> m s-2].
+    Rlay                !< The target coordinate value (potential density) in each layer [R ~> kg m-3].
   integer :: nkml = 0   !< The number of layers at the top that should be treated
-                        !! as parts of a homogenous region.
+                        !! as parts of a homogeneous region.
   integer :: nk_rho_varies = 0 !< The number of layers at the top where the
                         !! density does not track any target density.
   real :: H_to_kg_m2    !< A constant that translates thicknesses from the units of thickness to kg m-2.
   real :: kg_m2_to_H    !< A constant that translates thicknesses from kg m-2 to the units of thickness.
   real :: m_to_H        !< A constant that translates distances in m to the units of thickness.
   real :: H_to_m        !< A constant that translates distances in the units of thickness to m.
-  real :: H_to_Pa       !< A constant that translates the units of thickness to pressure in Pa.
+  real :: H_to_Pa       !< A constant that translates the units of thickness to pressure [Pa].
   real :: H_to_Z        !< A constant that translates thickness units to the units of depth.
   real :: Z_to_H        !< A constant that translates depth units to thickness units.
+  real :: H_to_RZ       !< A constant that translates thickness units to the units of mass per unit area.
+  real :: RZ_to_H       !< A constant that translates mass per unit area units to thickness units.
+  real :: H_to_MKS      !< A constant that translates thickness units to its
+                        !! MKS unit (m or kg m-2) based on GV%Boussinesq
 
   real :: m_to_H_restart = 0.0 !< A copy of the m_to_H that is used in restart files.
 end type verticalGrid_type
@@ -83,22 +93,22 @@ subroutine verticalGridInit( param_file, GV, US )
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, &
                    "Parameters providing information about the vertical grid.")
-  call get_param(param_file, mdl, "G_EARTH", GV%g_Earth, &
+  call get_param(param_file, mdl, "G_EARTH", GV%mks_g_Earth, &
                  "The gravitational acceleration of the Earth.", &
                  units="m s-2", default = 9.80)
   call get_param(param_file, mdl, "RHO_0", GV%Rho0, &
-                 "The mean ocean density used with BOUSSINESQ true to \n"//&
-                 "calculate accelerations and the mass for conservation \n"//&
-                 "properties, or with BOUSSINSEQ false to convert some \n"//&
+                 "The mean ocean density used with BOUSSINESQ true to "//&
+                 "calculate accelerations and the mass for conservation "//&
+                 "properties, or with BOUSSINSEQ false to convert some "//&
                  "parameters from vertical units of m to kg m-2.", &
-                 units="kg m-3", default=1035.0)
+                 units="kg m-3", default=1035.0, scale=US%kg_m3_to_R)
   call get_param(param_file, mdl, "BOUSSINESQ", GV%Boussinesq, &
                  "If true, make the Boussinesq approximation.", default=.true.)
   call get_param(param_file, mdl, "ANGSTROM", GV%Angstrom_m, &
-                 "The minumum layer thickness, usually one-Angstrom.", &
+                 "The minimum layer thickness, usually one-Angstrom.", &
                  units="m", default=1.0e-10)
   call get_param(param_file, mdl, "H_RESCALE_POWER", H_power, &
-                 "An integer power of 2 that is used to rescale the model's \n"//&
+                 "An integer power of 2 that is used to rescale the model's "//&
                  "intenal units of thickness.  Valid values range from -300 to 300.", &
                  units="nondim", default=0, debuggingParam=.true.)
   if (abs(H_power) > 300) call MOM_error(FATAL, "verticalGridInit: "//&
@@ -107,17 +117,17 @@ subroutine verticalGridInit( param_file, GV, US )
   if (H_power /= 0) H_rescale_factor = 2.0**H_power
   if (.not.GV%Boussinesq) then
     call get_param(param_file, mdl, "H_TO_KG_M2", GV%H_to_kg_m2,&
-                 "A constant that translates thicknesses from the model's \n"//&
+                 "A constant that translates thicknesses from the model's "//&
                  "internal units of thickness to kg m-2.", units="kg m-2 H-1", &
                  default=1.0)
     GV%H_to_kg_m2 = GV%H_to_kg_m2 * H_rescale_factor
   else
     call get_param(param_file, mdl, "H_TO_M", GV%H_to_m, &
-                 "A constant that translates the model's internal \n"//&
+                 "A constant that translates the model's internal "//&
                  "units of thickness into m.", units="m H-1", default=1.0)
     GV%H_to_m = GV%H_to_m * H_rescale_factor
   endif
-  GV%g_Earth = GV%g_Earth * US%Z_to_m
+  GV%g_Earth = US%m_to_L**2*US%Z_to_m*US%T_to_s**2 * GV%mks_g_Earth
 #ifdef STATIC_MEMORY_
   ! Here NK_ is a macro, while nk is a variable.
   call get_param(param_file, mdl, "NK", nk, &
@@ -133,22 +143,27 @@ subroutine verticalGridInit( param_file, GV, US )
   GV%ke = nk
 
   if (GV%Boussinesq) then
-    GV%H_to_kg_m2 = GV%Rho0 * GV%H_to_m
+    GV%H_to_kg_m2 = US%R_to_kg_m3*GV%Rho0 * GV%H_to_m
     GV%kg_m2_to_H = 1.0 / GV%H_to_kg_m2
     GV%m_to_H = 1.0 / GV%H_to_m
     GV%Angstrom_H = GV%m_to_H * GV%Angstrom_m
+    GV%H_to_MKS = GV%H_to_m
   else
     GV%kg_m2_to_H = 1.0 / GV%H_to_kg_m2
-    GV%m_to_H = GV%Rho0 * GV%kg_m2_to_H
-    GV%H_to_m = GV%H_to_kg_m2 / GV%Rho0
+    GV%m_to_H = US%R_to_kg_m3*GV%Rho0 * GV%kg_m2_to_H
+    GV%H_to_m = GV%H_to_kg_m2 / (US%R_to_kg_m3*GV%Rho0)
     GV%Angstrom_H = GV%Angstrom_m*1000.0*GV%kg_m2_to_H
+    GV%H_to_MKS = GV%H_to_kg_m2
   endif
   GV%H_subroundoff = 1e-20 * max(GV%Angstrom_H,GV%m_to_H*1e-17)
-  GV%H_to_Pa = (GV%g_Earth*US%m_to_Z) * GV%H_to_kg_m2
+  GV%H_to_Pa = GV%mks_g_Earth * GV%H_to_kg_m2
 
   GV%H_to_Z = GV%H_to_m * US%m_to_Z
   GV%Z_to_H = US%Z_to_m * GV%m_to_H
   GV%Angstrom_Z = US%m_to_Z * GV%Angstrom_m
+
+  GV%H_to_RZ = GV%H_to_kg_m2 * US%kg_m3_to_R * US%m_to_Z
+  GV%RZ_to_H = GV%kg_m2_to_H * US%R_to_kg_m3 * US%Z_to_m
 
 ! Log derivative values.
   call log_param(param_file, mdl, "M to THICKNESS", GV%m_to_H*H_rescale_factor)
@@ -257,9 +272,10 @@ function get_tr_flux_units(GV, tr_units, tr_vol_conc_units, tr_mass_conc_units)
 end function get_tr_flux_units
 
 !> This sets the coordinate data for the "layer mode" of the isopycnal model.
-subroutine setVerticalGridAxes( Rlay, GV )
+subroutine setVerticalGridAxes( Rlay, GV, scale )
   type(verticalGrid_type), intent(inout) :: GV   !< The container for vertical grid data
-  real, dimension(GV%ke),  intent(in)    :: Rlay !< The layer target density
+  real, dimension(GV%ke),  intent(in)    :: Rlay !< The layer target density [R ~> kg m-3]
+  real,                    intent(in)    :: scale !< A unit scaling factor for Rlay
   ! Local variables
   integer :: k, nk
 
@@ -267,13 +283,13 @@ subroutine setVerticalGridAxes( Rlay, GV )
 
   GV%zAxisLongName = 'Target Potential Density'
   GV%zAxisUnits = 'kg m-3'
-  do k=1,nk ; GV%sLayer(k) = Rlay(k) ; enddo
+  do k=1,nk ; GV%sLayer(k) = scale*Rlay(k) ; enddo
   if (nk > 1) then
-    GV%sInterface(1) = 1.5*Rlay(1) - 0.5*Rlay(2)
-    do K=2,nk ; GV%sInterface(K) = 0.5*( Rlay(k-1) + Rlay(k) ) ; enddo
-    GV%sInterface(nk+1) = 1.5*Rlay(nk) - 0.5*Rlay(nk-1)
+    GV%sInterface(1) = scale * (1.5*Rlay(1) - 0.5*Rlay(2))
+    do K=2,nk ; GV%sInterface(K) = scale * 0.5*( Rlay(k-1) + Rlay(k) ) ; enddo
+    GV%sInterface(nk+1) = scale * (1.5*Rlay(nk) - 0.5*Rlay(nk-1))
   else
-    GV%sInterface(1) = 0.0 ; GV%sInterface(nk+1) = 2.0*Rlay(nk)
+    GV%sInterface(1) = 0.0 ; GV%sInterface(nk+1) = 2.0*scale*Rlay(nk)
   endif
 
 end subroutine setVerticalGridAxes

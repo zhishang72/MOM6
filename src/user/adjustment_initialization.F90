@@ -24,6 +24,11 @@ character(len=40) :: mdl = "adjustment_initialization" !< This module's name.
 public adjustment_initialize_thickness
 public adjustment_initialize_temperature_salinity
 
+! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
+! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
+! their mks counterparts with notation like "a velocity [Z T-1 ~> m s-1]".  If the units
+! vary with the Boussinesq approximation, the Boussinesq variant is given first.
+
 contains
 
 !> Initializes the layer thicknesses in the adjustment test case
@@ -32,20 +37,24 @@ subroutine adjustment_initialize_thickness ( h, G, GV, US, param_file, just_read
   type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure.
   type(unit_scale_type),   intent(in)  :: US          !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                           intent(out) :: h           !< The thickness that is being initialized, in H.
+                           intent(out) :: h           !< The thickness that is being initialized [H ~> m or kg m-2].
   type(param_file_type),   intent(in)  :: param_file  !< A structure indicating the open file
                                                       !! to parse for model parameter values.
   logical,       optional, intent(in)  :: just_read_params !< If present and true, this call will
                                                       !! only read parameters without changing h.
   ! Local variables
-  real :: e0(SZK_(G)+1)   ! The resting interface heights, in depth units (Z), usually
+  real :: e0(SZK_(G)+1)   ! The resting interface heights, in depth units [Z ~> m], usually
                           ! negative because it is positive upward.
   real :: eta1D(SZK_(G)+1)! Interface height relative to the sea surface
-                          ! positive upward, in depth units (Z).
-  real    :: x, y, yy, delta_S_strat, dSdz, delta_S, S_ref
-  real    :: min_thickness, adjustment_width, adjustment_delta, adjustment_deltaS
+                          ! positive upward, in depth units [Z ~> m].
+  real    :: dRho_dS      ! The partial derivative of density with salinity [R ppt-1 ~> kg m-3 ppt-1].
+                          ! In this subroutine it is hard coded at 1.0 kg m-3 ppt-1.
+  real    :: x, y, yy
+  real    :: delta_S_strat, dSdz, delta_S, S_ref
+  real    :: min_thickness, adjustment_width, adjustment_delta
+  real    :: adjustment_deltaS
   real    :: front_wave_amp, front_wave_length, front_wave_asym
-  real    :: target_values(SZK_(G)+1)
+  real    :: target_values(SZK_(G)+1)  ! Target densities or density anomalies [R ~> kg m-3]
   logical :: just_read    ! If true, just read parameters but set nothing.
   character(len=20) :: verticalCoordinate
 ! This include declares and sets the variable "version".
@@ -102,6 +111,7 @@ subroutine adjustment_initialize_thickness ( h, G, GV, US, param_file, just_read
   select case ( coordinateMode(verticalCoordinate) )
 
     case ( REGRIDDING_LAYER, REGRIDDING_RHO )
+      dRho_dS = 1.0 * US%kg_m3_to_R
       if (delta_S_strat /= 0.) then
         ! This was previously coded ambiguously.
         adjustment_delta = (adjustment_deltaS / delta_S_strat) * G%max_depth
@@ -114,12 +124,12 @@ subroutine adjustment_initialize_thickness ( h, G, GV, US, param_file, just_read
           e0(k) = -G%max_depth * (real(k-1) / real(nz))
         enddo
       endif
-      target_values(1)    = GV%Rlay(1) + 0.5*(GV%Rlay(1)-GV%Rlay(2))
-      target_values(nz+1) = GV%Rlay(nz) + 0.5*(GV%Rlay(nz)-GV%Rlay(nz-1))
+      target_values(1)    = ( GV%Rlay(1) + 0.5*(GV%Rlay(1)-GV%Rlay(2)) )
+      target_values(nz+1) = ( GV%Rlay(nz) + 0.5*(GV%Rlay(nz)-GV%Rlay(nz-1)) )
       do k = 2,nz
         target_values(k) = target_values(k-1) + ( GV%Rlay(nz) - GV%Rlay(1) ) / (nz-1)
       enddo
-      target_values(:) = target_values(:) - 1000.
+      target_values(:) = target_values(:) - 1000.*US%kg_m3_to_R
       do j=js,je ; do i=is,ie
         if (front_wave_length /= 0.) then
           y = ( 0.125 + G%geoLatT(i,j) / front_wave_length ) * ( 4. * acos(0.) )
@@ -135,8 +145,8 @@ subroutine adjustment_initialize_thickness ( h, G, GV, US, param_file, just_read
         x = x * acos( 0. )
         delta_S = adjustment_deltaS * 0.5 * (1. - sin( x ) )
         do k=2,nz
-          if (dSdz /= 0.) then
-            eta1D(k) = ( target_values(k) - ( S_ref + delta_S ) ) / dSdz
+          if (dRho_dS*dSdz /= 0.) then
+            eta1D(k) = ( target_values(k) - dRho_dS*( S_ref + delta_S ) ) / (dRho_dS*dSdz)
           else
             eta1D(k) = e0(k) - (0.5*adjustment_delta) * sin( x )
           endif
@@ -183,7 +193,7 @@ subroutine adjustment_initialize_temperature_salinity(T, S, h, G, GV, param_file
   type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure.
   real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(out) :: T !< The temperature that is being initialized.
   real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(out) :: S !< The salinity that is being initialized.
-  real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(in)  :: h !< The model thicknesses in H (m or kg m-2).
+  real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(in)  :: h !< The model thicknesses [H ~> m or kg m-2].
   type(param_file_type),   intent(in) :: param_file   !< A structure indicating the open file to
                                                       !! parse for model parameter values.
   type(EOS_type),                 pointer     :: eqn_of_state !< Equation of state.

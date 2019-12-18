@@ -28,18 +28,17 @@ subroutine lock_exchange_initialize_thickness(h, G, GV, US, param_file, just_rea
   type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure.
   type(unit_scale_type),   intent(in)  :: US          !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                           intent(out) :: h           !< The thickness that is being initialized, in H.
+                           intent(out) :: h           !< The thickness that is being initialized [H ~> m or kg m-2].
   type(param_file_type),   intent(in)  :: param_file  !< A structure indicating the open file
                                                       !! to parse for model parameter values.
   logical,       optional, intent(in)  :: just_read_params !< If present and true, this call will
                                                       !! only read parameters without changing h.
 
-  real :: e0(SZK_(GV))     ! The resting interface heights, in m, usually !
-                           ! negative because it is positive upward.      !
-  real :: e_pert(SZK_(GV)) ! Interface height perturbations, positive     !
-                           ! upward, in m.                                !
-  real :: eta1D(SZK_(GV)+1)! Interface height relative to the sea surface !
-                           ! positive upward, in m.                       !
+  real :: e0(SZK_(GV))     ! The resting interface heights [Z ~> m], usually
+                           ! negative because it is positive upward.
+  real :: e_pert(SZK_(GV)) ! Interface height perturbations, positive upward [Z ~> m].
+  real :: eta1D(SZK_(GV)+1)! Interface height relative to the sea surface
+                           ! positive upward [Z ~> m].
   real :: front_displacement ! Vertical displacement acrodd front
   real :: thermocline_thickness ! Thickness of stratified region
   logical :: just_read    ! If true, just read parameters but set nothing.
@@ -57,12 +56,12 @@ subroutine lock_exchange_initialize_thickness(h, G, GV, US, param_file, just_rea
 
   if (.not.just_read) call log_version(param_file, mdl, version, "")
   call get_param(param_file, mdl, "FRONT_DISPLACEMENT", front_displacement, &
-                 "The vertical displacement of interfaces across the front. \n"//&
+                 "The vertical displacement of interfaces across the front. "//&
                  "A value larger in magnitude that MAX_DEPTH is truncated,", &
                  units="m", fail_if_missing=.not.just_read, do_not_log=just_read, scale=US%m_to_Z)
   call get_param(param_file, mdl, "THERMOCLINE_THICKNESS", thermocline_thickness, &
-                 "The thickness of the thermocline in the lock exchange \n"//&
-                 "experiment.  A value of zero creates a two layer system \n"//&
+                 "The thickness of the thermocline in the lock exchange "//&
+                 "experiment.  A value of zero creates a two layer system "//&
                  "with vanished layers in between the two inflated layers.", &
                  default=0., units="m", do_not_log=just_read, scale=US%m_to_Z)
 

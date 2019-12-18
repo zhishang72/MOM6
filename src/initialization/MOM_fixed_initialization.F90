@@ -78,7 +78,7 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
   inputdir = slasher(inputdir)
 
   ! Set up the parameters of the physical domain (i.e. the grid), G
-  call set_grid_metrics(G, PF)
+  call set_grid_metrics(G, PF, US)
 
   ! Set up the bottom depth, G%bathyT either analytically or from file
   ! This also sets G%max_depth based on the input parameter MAXIMUM_DEPTH,
@@ -99,7 +99,7 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
   call initialize_masks(G, PF, US)
 
   ! Make OBC mask consistent with land mask
-  call open_boundary_impose_land_mask(OBC, G, G%areaCu, G%areaCv)
+  call open_boundary_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)
 
   if (debug) then
     call hchksum(G%bathyT, 'MOM_initialize_fixed: depth ', G%HI, haloshift=1, scale=US%Z_to_m)
@@ -124,9 +124,9 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
                  default="none")
   select case ( trim(config) )
     case ("none")
-    case ("list") ; call reset_face_lengths_list(G, PF)
-    case ("file") ; call reset_face_lengths_file(G, PF)
-    case ("global_1deg") ; call reset_face_lengths_named(G, PF, trim(config))
+    case ("list") ; call reset_face_lengths_list(G, PF, US)
+    case ("file") ; call reset_face_lengths_file(G, PF, US)
+    case ("global_1deg") ; call reset_face_lengths_named(G, PF, trim(config), US)
     case default ; call MOM_error(FATAL, "MOM_initialize_fixed: "// &
       "Unrecognized channel configuration "//trim(config))
   end select
@@ -134,7 +134,7 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
   !   This call sets the topography at velocity points.
   if (G%bathymetry_at_vel) then
     call get_param(PF, mdl, "VELOCITY_DEPTH_CONFIG", config, &
-                   "A string that determines how the topography is set at \n"//&
+                   "A string that determines how the topography is set at "//&
                    "velocity points. This may be 'min' or 'max'.", &
                    default="max")
     select case ( trim(config) )
@@ -146,20 +146,20 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
   endif
 
 !    Calculate the value of the Coriolis parameter at the latitude   !
-!  of the q grid points, in s-1.
-  call MOM_initialize_rotation(G%CoriolisBu, G, PF)
+!  of the q grid points [s-1].
+  call MOM_initialize_rotation(G%CoriolisBu, G, PF, US=US)
 !   Calculate the components of grad f (beta)
-  call MOM_calculate_grad_Coriolis(G%dF_dx, G%dF_dy, G)
+  call MOM_calculate_grad_Coriolis(G%dF_dx, G%dF_dy, G, US=US)
   if (debug) then
-    call qchksum(G%CoriolisBu, "MOM_initialize_fixed: f ", G%HI)
-    call hchksum(G%dF_dx, "MOM_initialize_fixed: dF_dx ", G%HI)
-    call hchksum(G%dF_dy, "MOM_initialize_fixed: dF_dy ", G%HI)
+    call qchksum(G%CoriolisBu, "MOM_initialize_fixed: f ", G%HI, scale=US%s_to_T)
+    call hchksum(G%dF_dx, "MOM_initialize_fixed: dF_dx ", G%HI, scale=US%m_to_L*US%s_to_T)
+    call hchksum(G%dF_dy, "MOM_initialize_fixed: dF_dy ", G%HI, scale=US%m_to_L*US%s_to_T)
   endif
 
   call initialize_grid_rotation_angle(G, PF)
 
 ! Compute global integrals of grid values for later use in scalar diagnostics !
-  call compute_global_grid_integrals(G)
+  call compute_global_grid_integrals(G, US=US)
 
 ! Write out all of the grid data used by this run.
   if (write_geom) call write_ocean_geometry_file(G, PF, output_dir, US=US)
@@ -169,18 +169,20 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
 end subroutine MOM_initialize_fixed
 
 !> MOM_initialize_topography makes the appropriate call to set up the bathymetry.  At this
-!! point the topography is in units of m, but this can be changed later.
+!! point the topography is in units of [m], but this can be changed later.
 subroutine MOM_initialize_topography(D, max_depth, G, PF, US)
   type(dyn_horgrid_type),           intent(in)  :: G  !< The dynamic horizontal grid type
   real, dimension(G%isd:G%ied,G%jsd:G%jed), &
-                                    intent(out) :: D  !< Ocean bottom depth in m
+                                    intent(out) :: D  !< Ocean bottom depth [m]
   type(param_file_type),            intent(in)  :: PF !< Parameter file structure
-  real,                             intent(out) :: max_depth !< Maximum depth of model in m
+  real,                             intent(out) :: max_depth !< Maximum depth of model [m]
   type(unit_scale_type),  optional, intent(in)  :: US !< A dimensional unit scaling type
 
-!  This subroutine makes the appropriate call to set up the bottom depth.
-!  This is a separate subroutine so that it can be made public and shared with
-!  the ice-sheet code or other components.
+  ! This subroutine makes the appropriate call to set up the bottom depth.
+  ! This is a separate subroutine so that it can be made public and shared with
+  ! the ice-sheet code or other components.
+
+  ! Local variables
   real :: m_to_Z, Z_to_m  ! Dimensional rescaling factors
   character(len=40)  :: mdl = "MOM_initialize_topography" ! This subroutine's name.
   character(len=200) :: config

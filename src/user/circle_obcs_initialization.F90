@@ -20,6 +20,11 @@ implicit none ; private
 
 public circle_obcs_initialize_thickness
 
+! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
+! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
+! their mks counterparts with notation like "a velocity [Z T-1 ~> m s-1]".  If the units
+! vary with the Boussinesq approximation, the Boussinesq variant is given first.
+
 contains
 
 !> This subroutine initializes layer thicknesses for the circle_obcs experiment.
@@ -27,17 +32,17 @@ subroutine circle_obcs_initialize_thickness(h, G, GV, param_file, just_read_para
   type(ocean_grid_type),   intent(in)  :: G   !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)  :: GV  !< The ocean's vertical grid structure.
   real, dimension(SZI_(G),SZJ_(G), SZK_(GV)), &
-                           intent(out) :: h           !< The thickness that is being initialized, in H.
+                           intent(out) :: h           !< The thickness that is being initialized [H ~> m or kg m-2].
   type(param_file_type),   intent(in)  :: param_file  !< A structure indicating the open file
                                                       !! to parse for model parameter values.
   logical,       optional, intent(in)  :: just_read_params !< If present and true, this call will
                                                       !! only read parameters without changing h.
 
-  real :: e0(SZK_(GV)+1)   ! The resting interface heights, in depth units (Z), usually
+  real :: e0(SZK_(GV)+1)   ! The resting interface heights, in depth units [Z ~> m], usually
                            ! negative because it is positive upward.
   real :: eta1D(SZK_(GV)+1)! Interface height relative to the sea surface
-                           ! positive upward, in in depth units (Z).
-  real :: IC_amp           ! The amplitude of the initial height displacement, in H.
+                           ! positive upward, in depth units [Z ~> m].
+  real :: IC_amp           ! The amplitude of the initial height displacement [H ~> m or kg m-2].
   real :: diskrad, rad, xCenter, xRadius, lonC, latC, xOffset
   logical :: just_read
   ! This include declares and sets the variable "version".
@@ -55,15 +60,15 @@ subroutine circle_obcs_initialize_thickness(h, G, GV, param_file, just_read_para
   if (.not.just_read) call log_version(param_file, mdl, version, "")
   ! Parameters read by cartesian grid initialization
   call get_param(param_file, mdl, "DISK_RADIUS", diskrad, &
-                 "The radius of the initially elevated disk in the \n"//&
+                 "The radius of the initially elevated disk in the "//&
                  "circle_obcs test case.", units=G%x_axis_units, &
                  fail_if_missing=.not.just_read, do_not_log=just_read)
   call get_param(param_file, mdl, "DISK_X_OFFSET", xOffset, &
-                 "The x-offset of the initially elevated disk in the \n"//&
+                 "The x-offset of the initially elevated disk in the "//&
                  "circle_obcs test case.", units=G%x_axis_units, &
                  default = 0.0, do_not_log=just_read)
   call get_param(param_file, mdl, "DISK_IC_AMPLITUDE", IC_amp, &
-                 "Initial amplitude of interface height displacements \n"//&
+                 "Initial amplitude of interface height displacements "//&
                  "in the circle_obcs test case.", &
                  units='m', default=5.0, scale=GV%m_to_H, do_not_log=just_read)
 

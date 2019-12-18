@@ -28,6 +28,11 @@ public DOME_initialize_thickness
 public DOME_initialize_sponges
 public DOME_set_OBC_data
 
+! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
+! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
+! their mks counterparts with notation like "a velocity [Z T-1 ~> m s-1]".  If the units
+! vary with the Boussinesq approximation, the Boussinesq variant is given first.
+
 contains
 
 ! -----------------------------------------------------------------------------
@@ -42,7 +47,7 @@ subroutine DOME_initialize_topography(D, G, param_file, max_depth, US)
 
   ! Local variables
   real :: m_to_Z  ! A dimensional rescaling factor.
-  real :: min_depth ! The minimum and maximum depths in Z.
+  real :: min_depth ! The minimum and maximum depths [Z ~> m].
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "DOME_initialize_topography" ! This subroutine's name.
@@ -86,16 +91,16 @@ subroutine DOME_initialize_thickness(h, G, GV, param_file, just_read_params)
   type(ocean_grid_type),   intent(in)  :: G           !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure.
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                           intent(out) :: h           !< The thickness that is being initialized, in H.
+                           intent(out) :: h           !< The thickness that is being initialized [H ~> m or kg m-2].
   type(param_file_type),   intent(in)  :: param_file  !< A structure indicating the open file
                                                       !! to parse for model parameter values.
   logical,       optional, intent(in)  :: just_read_params !< If present and true, this call will
                                                       !! only read parameters without changing h.
 
-  real :: e0(SZK_(GV)+1)    ! The resting interface heights, in m, usually
-                            ! negative because it is positive upward, in depth units (Z).
+  real :: e0(SZK_(GV)+1)    ! The resting interface heights [Z ~> m], usually
+                            ! negative because it is positive upward [Z ~> m].
   real :: eta1D(SZK_(GV)+1) ! Interface height relative to the sea surface
-                            ! positive upward, in depth units (Z).
+                            ! positive upward [Z ~> m].
   logical :: just_read    ! If true, just read parameters but set nothing.
   character(len=40)  :: mdl = "DOME_initialize_thickness" ! This subroutine's name.
   integer :: i, j, k, is, ie, js, je, nz
@@ -154,9 +159,9 @@ subroutine DOME_initialize_sponges(G, GV, US, tv, PF, CSp)
 
   real :: eta(SZI_(G),SZJ_(G),SZK_(G)+1) ! A temporary array for eta.
   real :: temp(SZI_(G),SZJ_(G),SZK_(G))  ! A temporary array for other variables. !
-  real :: Idamp(SZI_(G),SZJ_(G))    ! The inverse damping rate, in s-1.
+  real :: Idamp(SZI_(G),SZJ_(G))    ! The inverse damping rate [s-1].
 
-  real :: H0(SZK_(G))  ! Interface heights in depth units (Z)
+  real :: H0(SZK_(G))  ! Interface heights [Z ~> m].
   real :: min_depth
   real :: damp, e_dense, damp_new
   character(len=40)  :: mdl = "DOME_initialize_sponges" ! This subroutine's name.
@@ -167,7 +172,7 @@ subroutine DOME_initialize_sponges(G, GV, US, tv, PF, CSp)
 
   eta(:,:,:) = 0.0 ; temp(:,:,:) = 0.0 ; Idamp(:,:) = 0.0
 
-!  Here the inverse damping time, in s-1, is set. Set Idamp to 0     !
+!  Here the inverse damping time [s-1], is set. Set Idamp to 0     !
 !  wherever there is no sponge, and the subroutines that are called  !
 !  will automatically set up the sponges only where Idamp is positive!
 !  and mask2dT is 1.                                                   !
@@ -254,17 +259,17 @@ subroutine DOME_set_OBC_data(OBC, tv, G, GV, US, param_file, tr_Reg)
 ! Local variables
   ! The following variables are used to set the target temperature and salinity.
   real :: T0(SZK_(G)), S0(SZK_(G))
-  real :: pres(SZK_(G))      ! An array of the reference pressure in Pa.
-  real :: drho_dT(SZK_(G))   ! Derivative of density with temperature in kg m-3 K-1.                              !
-  real :: drho_dS(SZK_(G))   ! Derivative of density with salinity in kg m-3 PSU-1.                             !
-  real :: rho_guess(SZK_(G)) ! Potential density at T0 & S0 in kg m-3.
+  real :: pres(SZK_(G))      ! An array of the reference pressure [Pa].
+  real :: drho_dT(SZK_(G))   ! Derivative of density with temperature [R degC-1 ~> kg m-3 degC-1].
+  real :: drho_dS(SZK_(G))   ! Derivative of density with salinity [R ppt-1 ~> kg m-3 ppt-1].
+  real :: rho_guess(SZK_(G)) ! Potential density at T0 & S0 [R ~> kg m-3].
   ! The following variables are used to set up the transport in the DOME example.
   real :: tr_0, y1, y2, tr_k, rst, rsb, rc, v_k, lon_im1
-  real :: D_edge            ! The thickness in Z of the dense fluid at the
+  real :: D_edge            ! The thickness [Z ~> m], of the dense fluid at the
                             ! inner edge of the inflow.
-  real :: g_prime_tot       ! The reduced gravity across all layers, m2 Z-1 s-2.
+  real :: g_prime_tot       ! The reduced gravity across all layers [L2 Z-1 T-2 ~> m s-2].
   real :: Def_Rad           ! The deformation radius, based on fluid of
-                            ! thickness D_edge, in the same units as lat.
+                            ! thickness D_edge, in the same units as lat [m].
   real :: Ri_trans          ! The shear Richardson number in the transition
                             ! region of the specified shear profile.
   character(len=40)  :: mdl = "DOME_set_OBC_data" ! This subroutine's name.
@@ -285,18 +290,30 @@ subroutine DOME_set_OBC_data(OBC, tv, G, GV, US, param_file, tr_Reg)
 
   if (.not.associated(OBC)) return
 
-  g_prime_tot = (GV%g_Earth/GV%Rho0)*2.0
-  Def_Rad = sqrt(D_edge*g_prime_tot) / (1.0e-4*1000.0)
-  tr_0 = (-D_edge*sqrt(D_edge*g_prime_tot)*0.5e3*Def_Rad) * GV%Z_to_H
+  g_prime_tot = (GV%g_Earth / GV%Rho0) * 2.0*US%kg_m3_to_R
+  Def_Rad = US%L_to_m*sqrt(D_edge*g_prime_tot) / (1.0e-4*US%T_to_s * 1000.0)
+  tr_0 = (-D_edge*sqrt(D_edge*g_prime_tot)*0.5e3*US%m_to_L*Def_Rad) * GV%Z_to_H
 
   if (OBC%number_of_segments /= 1) then
     call MOM_error(WARNING, 'Error in DOME OBC segment setup', .true.)
     return   !!! Need a better error message here
   endif
+
+  NTR = tr_Reg%NTR
+
+  ! Stash this information away for the messy tracer restarts.
+  OBC%ntr = NTR
+  if (.not. associated(OBC%tracer_x_reservoirs_used)) then
+    allocate(OBC%tracer_x_reservoirs_used(NTR))
+    allocate(OBC%tracer_y_reservoirs_used(NTR))
+    OBC%tracer_x_reservoirs_used(:) = .false.
+    OBC%tracer_y_reservoirs_used(:) = .false.
+    OBC%tracer_y_reservoirs_used(1) = .true.
+  endif
+
   segment => OBC%segment(1)
   if (.not. segment%on_pe) return
 
-  NTR = tr_Reg%NTR
   allocate(segment%field(NTR))
 
   do k=1,nz
@@ -340,13 +357,13 @@ subroutine DOME_set_OBC_data(OBC, tv, G, GV, US, param_file, tr_Reg)
     ! target density and a salinity of 35 psu.  This code is taken from
     ! USER_initialize_temp_sal.
     pres(:) = tv%P_Ref ; S0(:) = 35.0 ; T0(1) = 25.0
-    call calculate_density(T0(1),S0(1),pres(1),rho_guess(1),tv%eqn_of_state)
-    call calculate_density_derivs(T0,S0,pres,drho_dT,drho_dS,1,1,tv%eqn_of_state)
+    call calculate_density(T0(1),S0(1),pres(1),rho_guess(1),tv%eqn_of_state, scale=US%kg_m3_to_R)
+    call calculate_density_derivs(T0,S0,pres,drho_dT,drho_dS,1,1,tv%eqn_of_state, scale=US%kg_m3_to_R)
 
     do k=1,nz ; T0(k) = T0(1) + (GV%Rlay(k)-rho_guess(1)) / drho_dT(1) ; enddo
     do itt=1,6
-      call calculate_density(T0,S0,pres,rho_guess,1,nz,tv%eqn_of_state)
-      call calculate_density_derivs(T0,S0,pres,drho_dT,drho_dS,1,nz,tv%eqn_of_state)
+      call calculate_density(T0,S0,pres,rho_guess,1,nz,tv%eqn_of_state, scale=US%kg_m3_to_R)
+      call calculate_density_derivs(T0,S0,pres,drho_dT,drho_dS,1,nz,tv%eqn_of_state, scale=US%kg_m3_to_R)
       do k=1,nz ; T0(k) = T0(k) + (GV%Rlay(k)-rho_guess(k)) / drho_dT(k) ; enddo
     enddo
 

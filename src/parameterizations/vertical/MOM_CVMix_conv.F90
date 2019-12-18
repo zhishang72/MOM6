@@ -27,11 +27,11 @@ public CVMix_conv_init, calculate_CVMix_conv, CVMix_conv_end, CVMix_conv_is_used
 type, public :: CVMix_conv_cs
 
   ! Parameters
-  real    :: kd_conv_const !< diffusivity constant used in convective regime (m2/s)
-  real    :: kv_conv_const !< viscosity constant used in convective regime (m2/s)
+  real    :: kd_conv_const !< diffusivity constant used in convective regime [m2 s-1]
+  real    :: kv_conv_const !< viscosity constant used in convective regime [m2 s-1]
   real    :: bv_sqr_conv   !< Threshold for squared buoyancy frequency
-                           !! needed to trigger Brunt-Vaisala parameterization (1/s^2)
-  real    :: min_thickness !< Minimum thickness allowed (m)
+                           !! needed to trigger Brunt-Vaisala parameterization [s-2]
+  real    :: min_thickness !< Minimum thickness allowed [m]
   logical :: debug         !< If true, turn on debugging
 
   ! Daignostic handles and pointers
@@ -41,9 +41,9 @@ type, public :: CVMix_conv_cs
   !!@}
 
   ! Diagnostics arrays
-  real, allocatable, dimension(:,:,:) :: N2      !< Squared Brunt-Vaisala frequency (1/s2)
-  real, allocatable, dimension(:,:,:) :: kd_conv !< Diffusivity added by convection (m2/s)
-  real, allocatable, dimension(:,:,:) :: kv_conv !< Viscosity added by convection (m2/s)
+  real, allocatable, dimension(:,:,:) :: N2      !< Squared Brunt-Vaisala frequency [s-2]
+  real, allocatable, dimension(:,:,:) :: kd_conv !< Diffusivity added by convection [Z2 T-1 ~> m2 s-1]
+  real, allocatable, dimension(:,:,:) :: kv_conv !< Viscosity added by convection [Z2 T-1 ~> m2 s-1]
 
 end type CVMix_conv_cs
 
@@ -79,9 +79,9 @@ logical function CVMix_conv_init(Time, G, GV, US, param_file, diag, CS)
   call log_version(param_file, mdl, version, &
     "Parameterization of enhanced mixing due to convection via CVMix")
   call get_param(param_file, mdl, "USE_CVMix_CONVECTION", CVMix_conv_init, &
-                 "If true, turns on the enhanced mixing due to convection  \n"// &
-                 "via CVMix. This scheme increases diapycnal diffs./viscs. \n"// &
-                 " at statically unstable interfaces. Relevant parameters are \n"// &
+                 "If true, turns on the enhanced mixing due to convection "//&
+                 "via CVMix. This scheme increases diapycnal diffs./viscs. "//&
+                 "at statically unstable interfaces. Relevant parameters are "//&
                  "contained in the CVMix_CONVECTION% parameter block.", &
                  default=.false.)
 
@@ -105,17 +105,17 @@ logical function CVMix_conv_init(Time, G, GV, US, param_file, diag, CS)
   call openParameterBlock(param_file,'CVMix_CONVECTION')
 
   call get_param(param_file, mdl, "PRANDTL_CONV", prandtl_conv, &
-                 "The turbulent Prandtl number applied to convective \n"//&
+                 "The turbulent Prandtl number applied to convective "//&
                  "instabilities (i.e., used to convert KD_CONV into KV_CONV)", &
                  units="nondim", default=1.0)
 
   call get_param(param_file, mdl, 'KD_CONV', CS%kd_conv_const, &
-                 "Diffusivity used in convective regime. Corresponding viscosity \n" // &
+                 "Diffusivity used in convective regime. Corresponding viscosity "//&
                  "(KV_CONV) will be set to KD_CONV * PRANDTL_TURB.", &
                  units='m2/s', default=1.00)
 
   call get_param(param_file, mdl, 'BV_SQR_CONV', CS%bv_sqr_conv, &
-                 "Threshold for squared buoyancy frequency needed to trigger \n" // &
+                 "Threshold for squared buoyancy frequency needed to trigger "//&
                  "Brunt-Vaisala parameterization.", &
                  units='1/s^2', default=0.0)
 
@@ -134,9 +134,9 @@ logical function CVMix_conv_init(Time, G, GV, US, param_file, diag, CS)
   CS%id_N2 = register_diag_field('ocean_model', 'N2_conv', diag%axesTi, Time, &
       'Square of Brunt-Vaisala frequency used by MOM_CVMix_conv module', '1/s2')
   CS%id_kd_conv = register_diag_field('ocean_model', 'kd_conv', diag%axesTi, Time, &
-      'Additional diffusivity added by MOM_CVMix_conv module', 'm2/s', conversion=US%Z_to_m**2)
+      'Additional diffusivity added by MOM_CVMix_conv module', 'm2/s', conversion=US%Z2_T_to_m2_s)
   CS%id_kv_conv = register_diag_field('ocean_model', 'kv_conv', diag%axesTi, Time, &
-      'Additional viscosity added by MOM_CVMix_conv module', 'm2/s', conversion=US%Z_to_m**2)
+      'Additional viscosity added by MOM_CVMix_conv module', 'm2/s', conversion=US%Z2_T_to_m2_s)
 
   call CVMix_init_conv(convect_diff=CS%kd_conv_const, &
                        convect_visc=CS%kv_conv_const, &
@@ -152,26 +152,27 @@ subroutine calculate_CVMix_conv(h, tv, G, GV, US, CS, hbl)
   type(ocean_grid_type),                      intent(in)  :: G  !< Grid structure.
   type(verticalGrid_type),                    intent(in)  :: GV !< Vertical grid structure.
   type(unit_scale_type),                      intent(in)  :: US !< A dimensional unit scaling type
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)),   intent(in)  :: h  !< Layer thickness, in m or kg m-2.
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)),   intent(in)  :: h  !< Layer thickness [H ~> m or kg m-2].
   type(thermo_var_ptrs),                      intent(in)  :: tv !< Thermodynamics structure.
   type(CVMix_conv_cs),                            pointer :: CS !< The control structure returned
                                                                 !! by a previous call to CVMix_conv_init.
-  real, dimension(:,:),                 optional, pointer :: hbl!< Depth of ocean boundary layer (m)
+  real, dimension(:,:),                 optional, pointer :: hbl!< Depth of ocean boundary layer [m]
   ! local variables
   real, dimension(SZK_(G)) :: rho_lwr !< Adiabatic Water Density, this is a dummy
                                       !! variable since here convection is always
                                       !! computed based on Brunt Vaisala.
   real, dimension(SZK_(G)) :: rho_1d  !< water density in a column, this is also
                                       !! a dummy variable, same reason as above.
-  real, dimension(SZK_(G)+1) :: kv_col !< Viscosities at interfaces in the column (m2 s-1)
-  real, dimension(SZK_(G)+1) :: kd_col !< Diffusivities at interfaces in the column (m2 s-1)
-  real, dimension(SZK_(G)+1) :: iFaceHeight !< Height of interfaces (m)
-  real, dimension(SZK_(G))   :: cellHeight  !< Height of cell centers (m)
+  real, dimension(SZK_(G)+1) :: kv_col !< Viscosities at interfaces in the column [m2 s-1]
+  real, dimension(SZK_(G)+1) :: kd_col !< Diffusivities at interfaces in the column [m2 s-1]
+  real, dimension(SZK_(G)+1) :: iFaceHeight !< Height of interfaces [m]
+  real, dimension(SZK_(G))   :: cellHeight  !< Height of cell centers [m]
   integer :: kOBL                        !< level of OBL extent
-  real :: pref, g_o_rho0, rhok, rhokm1, dz, dh, hcorr
+  real :: g_o_rho0  ! Gravitational acceleration divided by density in MKS units [m4 s-2]
+  real :: pref, rhok, rhokm1, dz, dh, hcorr
   integer :: i, j, k
 
-  g_o_rho0 = (GV%g_Earth*US%m_to_Z) / GV%Rho0
+  g_o_rho0 = GV%mks_g_Earth / (US%R_to_kg_m3*GV%Rho0)
 
   ! initialize dummy variables
   rho_lwr(:) = 0.0; rho_1d(:) = 0.0
@@ -231,8 +232,8 @@ subroutine calculate_CVMix_conv(h, tv, G, GV, US, CS, hbl)
                                OBL_ind=kOBL)
 
       do K=1,G%ke+1
-        CS%kv_conv(i,j,K) = US%m_to_Z**2 * kv_col(K)
-        CS%kd_conv(i,j,K) = US%m_to_Z**2 * kd_col(K)
+        CS%kv_conv(i,j,K) = US%m2_s_to_Z2_T * kv_col(K)
+        CS%Kd_conv(i,j,K) = US%m2_s_to_Z2_T * kd_col(K)
       enddo
       ! Do not apply mixing due to convection within the boundary layer
       do k=1,kOBL
@@ -245,8 +246,8 @@ subroutine calculate_CVMix_conv(h, tv, G, GV, US, CS, hbl)
 
   if (CS%debug) then
     call hchksum(CS%N2, "MOM_CVMix_conv: N2",G%HI,haloshift=0)
-    call hchksum(CS%kd_conv, "MOM_CVMix_conv: kd_conv",G%HI,haloshift=0)
-    call hchksum(CS%kv_conv, "MOM_CVMix_conv: kv_conv",G%HI,haloshift=0)
+    call hchksum(CS%kd_conv, "MOM_CVMix_conv: kd_conv",G%HI,haloshift=0,scale=US%Z2_T_to_m2_s)
+    call hchksum(CS%kv_conv, "MOM_CVMix_conv: kv_conv",G%HI,haloshift=0,scale=US%m2_s_to_Z2_T)
   endif
 
   ! send diagnostics to post_data
